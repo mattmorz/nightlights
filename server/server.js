@@ -1,220 +1,197 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
-const Filter = require('bad-words');
-require('dotenv').config();
+const Sentiment = require('sentiment');
+const rateLimit = require('express-rate-limit'); // NEW: Limits repeated requests
+const Filter = require('bad-words'); // NEW: Filters profanity
 
+// --- CONFIGURATION ---
 const app = express();
-app.set('trust proxy', 1);
+const PORT = process.env.PORT || 5001;
+const sentimentAnalyzer = new Sentiment();
+const filter = new Filter(); // Initialize profanity filter
 
-// --- 1. SECURITY MIDDLEWARE ---
-app.use(helmet()); // Secure HTTP Headers
-//app.use(cors());
-// Allow both Localhost (for testing) and your future Vercel URL
-const allowedOrigins = [
-  'http://localhost:3000', 
-  'http://localhost:5173', // specific for Vite users if applicable
-  process.env.FRONTEND_URL // We will set this variable in Render later
-];
+// Middleware
+app.use(cors());
+app.use(express.json());
+// Trust proxy is required if you deploy behind a reverse proxy (like Heroku, Vercel, Nginx)
+app.set('trust proxy', 1); 
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      // If the origin isn't in the list, check if it matches the Vercel domain pattern generally
-      if (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL) {
-        return callback(null, true);
-      }
-      return callback(new Error('CORS Policy: This origin is not allowed'), false);
-    }
-    return callback(null, true);
-  }
-}));
-app.use(express.json({ limit: '10kb' })); // Limit body size to prevent DOS
+// --- DATABASE CONNECTION ---
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://<user>:<pass>@cluster.mongodb.net/nightlights?retryWrites=true&w=majority';
 
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB Atlas'))
+  .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-app.use((req, res, next) => {
-  // Manually sanitize body to prevent NoSQL injection
-  // We skip 'req.query' because Node 25 makes it read-only, causing the crash.
-  if (req.body) {
-    mongoSanitize.sanitize(req.body);
-  }
-  if (req.params) {
-    mongoSanitize.sanitize(req.params);
-  }
-  next();
-});
-
-// Profanity Filter Configuration
-const filter = new Filter();
-// Add custom words to block if needed
-// filter.addWords('badword1', 'badword2'); 
-
-// Rate Limiter: 10 Posts per Hour per IP
-const postLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, 
-  max: 10, 
-  message: { error: "Signal exhausted. You have reached the limit of 10 signals per hour." },
-  standardHeaders: true, 
-  legacyHeaders: false,
-});
-
-// --- 2. DATABASE CONNECTION ---
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/nightlights')
-  .then(async () => {
-    console.log('✅ Connected to MongoDB');
-    // Ensure 2dsphere index exists for geospatial queries
-    try {
-      await mongoose.model('Thought').collection.createIndex({ location: '2dsphere' });
-    } catch (e) { console.log('Index warning:', e.message); }
-  })
-  .catch(err => console.error('❌ DB Error:', err));
-
-// --- 3. SCHEMA ---
+// --- SCHEMA & MODEL ---
 const ThoughtSchema = new mongoose.Schema({
-  text: { 
+  text: { type: String, required: true, maxlength: 500 },
+  sentiment: { 
     type: String, 
-    required: true, 
-    maxlength: 500 
+    enum: ['positive', 'distressed'], 
+    required: true 
   },
-  sentiment: { type: String, enum: ['positive', 'distressed'] },
-  isHealed: { type: Boolean, default: false },
   location: {
     type: { type: String, default: 'Point' },
-    coordinates: [Number] // [lng, lat]
+    coordinates: { type: [Number], required: true } 
   },
-  createdAt: { type: Date, default: Date.now, expires: 86400 }, // Auto-delete after 24h
-  lightCount: { type: Number, default: 0 }
+  isHealed: { type: Boolean, default: false },
+  lightCount: { type: Number, default: 0 },
+  createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
-ThoughtSchema.index({ location: '2dsphere' });
 
+ThoughtSchema.index({ location: '2dsphere' });
 const Thought = mongoose.model('Thought', ThoughtSchema);
 
-// --- 4. SECURE HELPER FUNCTIONS ---
+// --- SECURITY & MODERATION TOOLS ---
 
-// Donut Fuzzing: Pushes point AT LEAST 500m away, up to 2km.
-// Prevents "trilateration" attacks better than simple random fuzzing.
-const fuzzLocation = (lat, lng) => {
-  const EARTH_RADIUS = 6378137; // meters
-  const MIN_OFFSET = 500; // Minimum 500m away
-  const MAX_OFFSET = 2000; // Maximum 2km away
-
-  const distance = Math.random() * (MAX_OFFSET - MIN_OFFSET) + MIN_OFFSET;
-  const angle = Math.random() * Math.PI * 2; // Random direction
-
-  const dLat = distance * Math.cos(angle) / EARTH_RADIUS;
-  const dLng = distance * Math.sin(angle) / (EARTH_RADIUS * Math.cos(Math.PI * lat / 180));
-
-  return { 
-    lat: lat + (dLat * 180 / Math.PI), 
-    lng: lng + (dLng * 180 / Math.PI) 
-  };
-};
-
-// PII Scrubber: Hides phones and emails
-const scrubText = (text) => {
-  const phoneRegex = /(\+\d{1,2}\s)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g;
-  const emailRegex = /[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}/g;
-  return text.replace(phoneRegex, '***-****').replace(emailRegex, '***@***.***');
-};
-
-const RADIUS_IN_RADIANS = 10 / 6378.1; // 10km Radius
-
-// --- 5. ROUTES ---
-
-// GET: Fetch thoughts
-app.get('/thoughts', async (req, res) => {
-  try {
-    const thoughts = await Thought.find();
-    // Calculate healing stats dynamically
-    const thoughtsWithData = await Promise.all(thoughts.map(async (t) => {
-      let lightCount = 0;
-      if (t.sentiment === 'distressed' && !t.isHealed) {
-         try {
-           lightCount = await Thought.countDocuments({
-             sentiment: 'positive',
-             location: { $geoWithin: { $centerSphere: [ t.location.coordinates, RADIUS_IN_RADIANS ] } }
-           });
-         } catch (e) { lightCount = 0; }
-      }
-      return { ...t.toObject(), lightCount };
-    }));
-    res.json(thoughtsWithData);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+// 1. RATE LIMITER: Allow only 10 posts per hour per IP
+const postLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 Hour
+  max: 10, // Limit each IP to 10 requests per windowMs
+  message: { error: "You are sending too many signals. Please rest for a while and try again later." },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
-// POST: Create Signal (Secured)
-app.post('/thoughts', postLimiter, async (req, res) => {
-  let { text, sentiment, lat, lng, trap } = req.body;
+// 2. CONTENT VALIDATION FUNCTION
+const containsSensitiveInfo = (text) => {
+  // Regex for Email
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  // Regex for Phone Numbers (Generic 7-15 digits, allows spaces/dashes)
+  const phoneRegex = /(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/;
+  
+  if (emailRegex.test(text)) return "Privacy Alert: Please do not post email addresses.";
+  if (phoneRegex.test(text)) return "Privacy Alert: Please do not post phone numbers.";
+  return null;
+};
 
-  // A. HONEYPOT CHECK (Anti-Bot)
-  if (trap && trap.length > 0) {
-    return res.json({ success: true, fake: true }); // Fake success to confuse bot
-  }
+// --- ROUTES ---
 
-  // B. VALIDATION
-  if (!lat || !lng) return res.status(400).json({ error: "Location required" });
-  if (!text || text.length > 500) return res.status(400).json({ error: "Message too long." });
-
-  // C. PROFANITY & PII CHECK
-  if (filter.isProfane(text)) {
-    return res.status(400).json({ error: "Please keep the space safe. Profanity is not allowed." });
-  }
-  text = scrubText(text);
-
-  // D. FUZZ LOCATION
-  const fuzzed = fuzzLocation(lat, lng);
-  const userLocation = { type: 'Point', coordinates: [fuzzed.lng, fuzzed.lat] };
-
+// GET: Fetch all thoughts
+app.get('/thoughts', async (req, res) => {
   try {
-    const newThought = new Thought({ text, sentiment, location: userLocation });
-    await newThought.save();
+    const thoughts = await Thought.find().sort({ createdAt: -1 }).limit(500);
+    res.json(thoughts);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch thoughts" });
+  }
+});
 
-    let healedCount = 0;
+// POST: Create a new thought (Applied Rate Limiter here)
+app.post('/thoughts', postLimiter, async (req, res) => {
+  try {
+    const { text, trap } = req.body;
+
+    // 1. FORCE NUMBERS
+    const lat = Number(req.body.lat);
+    const lng = Number(req.body.lng);
+
+    // 2. HONEYPOT & BASIC VALIDATION
+    if (trap && trap.length > 0) return res.json({ success: true }); // Silent fail for bots
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ error: "Invalid Location Data" });
+    }
+    if (!text || text.length > 500) return res.status(400).json({ error: "Message too long." });
+
+    // 3. PROFANITY CHECK
+    if (filter.isProfane(text)) {
+      return res.status(400).json({ error: "Your message contains words that are not allowed in this safe space." });
+    }
+
+    // 4. PRIVACY CHECK (Emails & Phones)
+    const privacyError = containsSensitiveInfo(text);
+    if (privacyError) {
+      return res.status(400).json({ error: privacyError });
+    }
+
+    // 5. SERVER-SIDE SENTIMENT ANALYSIS
+    const analysis = sentimentAnalyzer.analyze(text);
+    const sentimentType = analysis.score < 0 ? 'distressed' : 'positive';
+    
+    console.log(`📝 New Thought: "${text}" | Score: ${analysis.score} | Type: ${sentimentType}`);
+
+    // 6. PREPARE DATA
+    const userLocation = { type: 'Point', coordinates: [lng, lat] }; 
+    const RADIUS_RADIANS = 5 / 6378.1; // 5km radius
+
+    const newThought = new Thought({
+      text,
+      sentiment: sentimentType,
+      location: userLocation,
+      isHealed: sentimentType === 'positive', 
+      lightCount: 0
+    });
+
+    let message = "";
     let bornHealed = false;
 
-    // E. RULE OF 5 LOGIC
-    if (sentiment === 'positive') {
-      const nearbySadThoughts = await Thought.find({
-          sentiment: 'distressed', isHealed: false,
-          location: { $geoWithin: { $centerSphere: [ [fuzzed.lng, fuzzed.lat], RADIUS_IN_RADIANS ] } }
+    // 7. HEALING LOGIC
+    if (sentimentType === 'positive') {
+      // --- CASE A: User placed a BEACON (Light) ---
+      await newThought.save();
+
+      const nearbyDistressed = await Thought.find({
+        sentiment: 'distressed',
+        isHealed: false,
+        location: { $geoWithin: { $centerSphere: [ [lng, lat], RADIUS_RADIANS ] } }
       });
+      
+      let actuallyHealedSomeone = false;
 
-      for (const sadPin of nearbySadThoughts) {
-         const lightCount = await Thought.countDocuments({
-           sentiment: 'positive',
-           location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, RADIUS_IN_RADIANS ] } }
-         });
-
-         if (lightCount >= 5) {
-           sadPin.isHealed = true;
-           await sadPin.save();
-           healedCount++;
-         }
+      for (const sadPin of nearbyDistressed) {
+        const lightsAroundPin = await Thought.countDocuments({
+          sentiment: 'positive',
+          location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, RADIUS_RADIANS ] } }
+        });
+        
+        sadPin.lightCount = lightsAroundPin;
+        
+        if (sadPin.lightCount >= 5) {
+          sadPin.isHealed = true;
+          actuallyHealedSomeone = true;
+        }
+        await sadPin.save();
       }
+
+      if (actuallyHealedSomeone) {
+        message = "Your radiance broke the darkness. You have healed a neighbor.";
+      } else {
+        message = "Your light has been placed. It shines for those nearby.";
+      }
+
     } else {
+      // --- CASE B: User placed a HEAVY HEART (Distressed) ---
       const nearbyLights = await Thought.countDocuments({
-        sentiment: 'positive', 
-        location: { $geoWithin: { $centerSphere: [ [fuzzed.lng, fuzzed.lat], RADIUS_IN_RADIANS ] } }
+        sentiment: 'positive',
+        location: { $geoWithin: { $centerSphere: [ [lng, lat], RADIUS_RADIANS ] } }
       });
+      
+      newThought.lightCount = nearbyLights;
 
       if (nearbyLights >= 5) {
         newThought.isHealed = true;
-        await newThought.save();
         bornHealed = true;
+        message = "You are not alone here. You are standing in the circle of care.";
+      } else {
+        message = "We hear you. Your light is now visible to the world.";
       }
+
+      await newThought.save();
     }
 
-    res.json({ success: true, healedCount, bornHealed });
+    // 8. RESPOND
+    res.json({ success: true, sentiment: sentimentType, message, bornHealed });
 
   } catch (err) {
-    console.error("❌ Save Error:", err);
-    res.status(500).json({ error: "Server error" });
+    console.error("❌ Server Error:", err);
+    res.status(500).json({ error: "Server error processing your signal." });
   }
 });
 
-app.listen(5001, () => console.log('🚀 Secure Server running on port 5001'));
+// Start Server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});

@@ -118,3 +118,93 @@ button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: point
 .popup-inner strong { display: block; margin-bottom: 5px; font-size: 1.1em; }
 .healing-progress { margin-top: 10px; background: #21262d; padding: 8px; border-radius: 5px; }
 .candle-bar { font-size: 1.2rem; margin: 5px 0; letter-spacing: 2px; }
+
+/* --- NOTIFICATION MODAL STYLES --- */
+.notification-content {
+  text-align: center;
+  border-top: 4px solid #a855f7; /* Purple accent */
+}
+
+.notification-icon {
+  font-size: 3.5rem;
+  margin-bottom: 15px;
+  animation: float 3s ease-in-out infinite;
+  text-shadow: 0 0 20px rgba(168, 85, 247, 0.5); /* Glow effect */
+}
+
+.notification-message {
+  font-size: 1.1rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+/* Floating Animation for the Icon */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+/* Make sure modal content is generally readable */
+.modal-content h3 {
+  margin-bottom: 0.5rem;
+  font-weight: 300;
+  letter-spacing: 1px;
+}
+
+/* --- ABOUT MODAL IMPROVEMENTS --- */
+.about-content {
+  max-width: 450px; /* Slightly wider for better reading */
+  text-align: center;
+}
+
+.about-grid {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.about-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03); /* Subtle background */
+  transition: transform 0.2s ease;
+}
+
+.about-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  transform: translateX(5px);
+}
+
+/* Highlight the Healing mechanic slightly more */
+.highlight-row {
+  border: 1px solid rgba(168, 85, 247, 0.3); /* Faint purple border */
+  background: rgba(168, 85, 247, 0.05);
+}
+
+.about-icon-container {
+  font-size: 1.8rem;
+  min-width: 40px; /* Ensures alignment */
+  text-align: center;
+  padding-top: 2px;
+}
+
+.about-text strong {
+  display: block;
+  font-size: 1.05rem;
+  color: #e2e8f0;
+  margin-bottom: 4px;
+}
+
+.about-text p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}

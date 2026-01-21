@@ -10,6 +10,7 @@
     "helmet": "^8.1.0",
     "leaflet": "^1.9.4",
     "mongoose": "^9.1.5",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "sentiment": "^5.0.2"
   }
 }

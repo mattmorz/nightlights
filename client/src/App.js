@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMapEvents, ZoomControl, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
@@ -8,10 +8,7 @@ import './App.css';
 // If the app finds a compiled environment variable, use it. Otherwise, localhost.
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/thoughts';
 const MAX_CHARS = 500;
-
-// GEOGRAPHY: PHILIPPINES
-const PH_CENTER = [12.8797, 121.7740];
-const PH_BOUNDS = [ [4.5, 116.0], [21.5, 127.5] ];
+const RADIUS_LIMIT_METERS = 5000; // 5km Limit
 
 // --- ICON GENERATOR ---
 const getSizedIcon = (type, zoomLevel) => {
@@ -34,32 +31,34 @@ const getSizedIcon = (type, zoomLevel) => {
   });
 };
 
-// --- MOCK AI ---
-const mockAIService = async (text) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const lowerText = text.toLowerCase();
-      const sadKeywords = ['sad', 'lonely', 'dark', 'pain', 'fail', 'tired', 'help', 'lost', 'grief'];
-      const isSad = sadKeywords.some(word => lowerText.includes(word));
-      resolve({
-        sentiment: isSad ? 'distressed' : 'positive',
-        reply: isSad ? "I hear your pain. It is valid. You have placed a signal in the dark; wait for the light." : null
-      });
-    }, 1000);
-  });
-};
-
-// --- MAP HANDLER ---
-function MapHandler({ setZoomLevel, setTempLocation, setIsModalOpen }) {
+// --- MAP HANDLER (UPDATED with Custom Notifications) ---
+function MapHandler({ setZoomLevel, setTempLocation, setIsModalOpen, userLocation, showNotification }) {
   const map = useMapEvents({
     zoomend: () => setZoomLevel(map.getZoom()),
     click(e) {
-      const { lat, lng } = e.latlng;
-      const isInsidePH = lat >= 4.5 && lat <= 21.5 && lng >= 116.0 && lng <= 127.5;
-      if (!isInsidePH) {
-        alert("Signal out of range. Please place your signal within the Philippines.");
-        return; 
+      // 1. Check if we have user location
+      if (!userLocation) {
+        showNotification(
+          "📡", 
+          "Searching for Signal...", 
+          "We are still calibrating your location. Please allow GPS access to connect to the network."
+        );
+        return;
       }
+
+      // 2. Calculate Distance
+      const distance = e.latlng.distanceTo(userLocation);
+
+      if (distance > RADIUS_LIMIT_METERS) {
+        const distKm = (distance / 1000).toFixed(1);
+        showNotification(
+          "🔭", // Icon
+          "Beyond the Horizon", // Title
+          `Your light cannot travel that far. You can only illuminate the ground within 5km of you.\n(Target is ${distKm}km away)` // Message
+        );
+        return;
+      }
+
       setTempLocation(e.latlng);
       setIsModalOpen(true);
     },
@@ -74,13 +73,16 @@ function App() {
   const [isAboutOpen, setIsAboutOpen] = useState(true);
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   
+  // NEW: Notification State for custom alerts
+  const [notification, setNotification] = useState(null); 
+
   const [tempLocation, setTempLocation] = useState(null);
   const [thoughtText, setThoughtText] = useState("");
-  const [honeypot, setHoneypot] = useState(""); // HONEYPOT STATE
+  const [honeypot, setHoneypot] = useState(""); 
   
   const [zoomLevel, setZoomLevel] = useState(6);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiResponse, setAiResponse] = useState(null);
+  const [userLocation, setUserLocation] = useState(null);
 
   const stats = {
     total: pins.length,
@@ -89,6 +91,25 @@ function App() {
     beacons: pins.filter(p => p.sentiment === 'positive').length,
   };
 
+  // Helper to trigger custom alerts
+  const showNotification = (icon, title, message) => {
+    setNotification({ icon, title, message });
+  };
+
+  // 1. Get Real User Location
+  useEffect(() => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+      },
+      (error) => console.error("Error getting location:", error)
+    );
+  }, []);
+
+  // 2. Fetch Pins
   const refreshPins = async () => {
     try {
       const res = await axios.get(API_URL);
@@ -110,42 +131,46 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // 3. Handle Submit
   const handleSubmit = async () => {
     if (!thoughtText.trim()) return;
     if (thoughtText.length > MAX_CHARS) {
-      alert("Message too long.");
+      showNotification("📝", "Message Overflow", "Your thought is too heavy (max 500 chars). Please condense it.");
       return;
     }
 
     setIsAnalyzing(true);
-    const aiResult = await mockAIService(thoughtText);
 
     try {
       const response = await axios.post(API_URL, {
         text: thoughtText,
-        sentiment: aiResult.sentiment,
         lat: tempLocation.lat,
         lng: tempLocation.lng,
-        trap: honeypot // Send honeypot value
+        trap: honeypot
       });
 
-      if (aiResult.sentiment === 'distressed') {
-        if (response.data.bornHealed) {
-          setAiResponse("You are in a safe zone. The community light has already caught you.");
-        } else {
-          setAiResponse(aiResult.reply);
-        }
+      const { sentiment, message } = response.data;
+
+      // Close input modal immediately
+      setIsModalOpen(false);
+      setThoughtText("");
+      setHoneypot("");
+      setTempLocation(null);
+
+      // Show the Server Response using our new Notification System
+      if (sentiment === 'distressed') {
+         showNotification("🌙", "Signal Received", message);
       } else {
-        closeModal();
+         showNotification("✨", "Beacon Lit", message);
       }
+      
       refreshPins();
     } catch (error) {
-      if (error.response) {
-         // Display Backend Error (Profanity, Rate Limit, etc)
-         alert(`⚠️ Transmission Failed: ${error.response.data.error}`);
-      } else {
-         alert("Transmission failed. Is the server running?");
+      let errorMsg = "Transmission failed. Is the server running?";
+      if (error.response && error.response.data && error.response.data.error) {
+        errorMsg = error.response.data.error;
       }
+      showNotification("⚠️", "Connection Lost", errorMsg);
     }
     setIsAnalyzing(false);
   };
@@ -154,7 +179,6 @@ function App() {
     setIsModalOpen(false);
     setThoughtText("");
     setHoneypot("");
-    setAiResponse(null);
     setTempLocation(null);
   };
 
@@ -166,18 +190,32 @@ function App() {
       </header>
 
       <MapContainer 
-        center={PH_CENTER} 
-        zoom={6} 
+        center={userLocation || [12.8797, 121.7740]} 
+        zoom={userLocation ? 13 : 6} 
         minZoom={5} 
-        maxBounds={PH_BOUNDS} 
-        maxBoundsViscosity={1.0} 
         scrollWheelZoom={true} 
         className="map-view"
         zoomControl={false}
       >
         <ZoomControl position="bottomright" />
         <TileLayer attribution='&copy; CARTO' url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-        <MapHandler setZoomLevel={setZoomLevel} setTempLocation={setTempLocation} setIsModalOpen={setIsModalOpen} />
+        
+        {/* Pass showNotification to handler */}
+        <MapHandler 
+          setZoomLevel={setZoomLevel} 
+          setTempLocation={setTempLocation} 
+          setIsModalOpen={setIsModalOpen}
+          userLocation={userLocation}
+          showNotification={showNotification} 
+        />
+
+        {userLocation && (
+          <Circle 
+            center={userLocation} 
+            radius={RADIUS_LIMIT_METERS} 
+            pathOptions={{ color: '#a855f7', fillOpacity: 0.08, dashArray: '10, 10', weight: 1 }} 
+          />
+        )}
 
         {pins.map((pin) => {
           let type = pin.sentiment === 'positive' ? 'positive' : (pin.isHealed ? 'healed' : 'distressed');
@@ -223,33 +261,61 @@ function App() {
               <div className="stat-card"><div className="stat-value text-yellow">{stats.beacons}</div><div className="stat-label">Beacons Lit</div></div>
               <div className="stat-card full-width"><div className="stat-value text-cyan">{stats.healed}</div><div className="stat-label">Souls Healed</div></div>
             </div>
-            <p className="stat-footer">Total signals: <strong>{stats.total}</strong></p>
             <button onClick={() => setIsStatsOpen(false)} className="btn-submit">Close</button>
           </div>
         </div>
       )}
 
       {/* ABOUT MODAL */}
+     {/* ABOUT MODAL - IMPROVED */}
       {isAboutOpen && (
         <div className="modal-overlay">
           <div className="modal-content about-content">
-            <h3>Welcome to Night Lights 🌑</h3>
-            <div className="about-section"><p>A shared canvas where we can signal our pain or offer our light to others.</p></div>
-            <div className="about-section">
-              <h4>🔒 Privacy & Safety</h4>
-              <p style={{fontSize: '0.9rem', color: '#8b949e'}}><strong>Anonymous.</strong> No names, no IP tracking. Locations are <strong>randomized (fuzzed)</strong> by up to 2km to protect your physical location.</p>
+            <h3 style={{ fontSize: '1.8rem', marginBottom: '5px' }}>Night Lights 🌑</h3>
+            <p style={{ color: '#a855f7', fontStyle: 'italic', marginBottom: '20px' }}>
+              "We are all just walking each other home."
+            </p>
+
+            <div className="about-grid">
+              
+              {/* Feature 1: The Core Loop */}
+              <div className="about-row">
+                <div className="about-icon-container">📡</div>
+                <div className="about-text">
+                  <strong>The Signal</strong>
+                  <p>Drop a <strong>Heavy Heart</strong> (🌑) if you are lost, or place a <strong>Beacon</strong> (✨) to leave hope for others.</p>
+                </div>
+              </div>
+
+              {/* Feature 2: Location Rule */}
+              <div className="about-row">
+                <div className="about-icon-container">📍</div>
+                <div className="about-text">
+                  <strong>Grounded in Reality</strong>
+                  <p>This map is alive. To ensure every light is real, you can only interact with the world within <strong>5km</strong> of where you stand.</p>
+                </div>
+              </div>
+
+              {/* Feature 3: The Healing Mechanic */}
+              <div className="about-row highlight-row">
+                <div className="about-icon-container">❤️‍🩹</div>
+                <div className="about-text">
+                  <strong>Collective Healing</strong>
+                  <p>No shadow lasts forever. When <strong>5 Neighbors</strong> surround a sad signal with light, the darkness breaks, and the pin becomes a permanent <strong>Star</strong>.</p>
+                </div>
+              </div>
+
             </div>
-            <div className="about-section">
-              <h4>🤝 How to Heal</h4>
-              <p style={{fontSize: '0.9rem', color: '#8b949e'}}>When <strong>5 Beacons</strong> surround a Heavy Heart, the darkness breaks, and the signal transforms into a radiant Star.</p>
-            </div>
-            <button onClick={() => setIsAboutOpen(false)} className="btn-submit" style={{width: '100%'}}>Enter the Night</button>
+
+            <button onClick={() => setIsAboutOpen(false)} className="btn-submit" style={{ width: '100%', marginTop: '15px' }}>
+              Enter the Night
+            </button>
           </div>
         </div>
       )}
 
       {/* INPUT MODAL */}
-      {isModalOpen && !aiResponse && !isAboutOpen && !isStatsOpen && (
+      {isModalOpen && !isAboutOpen && !isStatsOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
             <h3>Send a signal...</h3>
@@ -261,15 +327,7 @@ function App() {
               maxLength={MAX_CHARS}
             />
             
-            {/* --- HONEYPOT FIELD (Hidden from humans) --- */}
-            <input 
-              type="text" 
-              name="website_url" 
-              style={{ display: 'none', visibility: 'hidden' }} 
-              value={honeypot}
-              onChange={(e) => setHoneypot(e.target.value)}
-              autoComplete="off"
-            />
+            <input type="text" style={{ display: 'none' }} value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
 
             <div style={{ textAlign: 'right', fontSize: '0.8rem', color: thoughtText.length >= 450 ? '#ff4444' : '#8b949e', marginBottom: '10px' }}>
               {thoughtText.length} / {MAX_CHARS}
@@ -284,13 +342,14 @@ function App() {
         </div>
       )}
 
-      {/* AI RESPONSE */}
-      {aiResponse && (
+      {/* NEW: UNIFIED NOTIFICATION MODAL (Replaces Alerts & AI Response) */}
+      {notification && (
         <div className="modal-overlay">
-          <div className="modal-content comfort-mode">
-            <h3>Signal Received</h3>
-            <p className="ai-message">{aiResponse}</p>
-            <button onClick={closeModal} className="btn-cancel">Close</button>
+          <div className="modal-content notification-content">
+            <div className="notification-icon">{notification.icon}</div>
+            <h3>{notification.title}</h3>
+            <p className="notification-message">{notification.message}</p>
+            <button onClick={() => setNotification(null)} className="btn-submit">Acknowledged</button>
           </div>
         </div>
       )}

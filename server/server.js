@@ -8,6 +8,7 @@ const Filter = require('bad-words');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 
 // --- 1. SECURITY MIDDLEWARE ---
 app.use(helmet()); // Secure HTTP Headers

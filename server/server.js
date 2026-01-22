@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const http = require('http'); // Import HTTP
+const { Server } = require('socket.io'); // Import Socket.io
 const Sentiment = require('sentiment');
 const rateLimit = require('express-rate-limit'); 
 const Filter = require('bad-words'); 
@@ -9,6 +11,46 @@ const Filter = require('bad-words');
 // --- CONFIGURATION ---
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// 1. Create the HTTP Server
+const server = http.createServer(app);
+
+// 2. Initialize Socket.io with CORS
+const io = new Server(server, {
+  cors: {
+    origin: ["http://localhost:3000", "https://nightlights-eight.vercel.app"], // Allow connections from your React app
+    methods: ["GET", "POST", "PUT"]
+  }
+});
+
+// 3. Socket.io Logic
+io.on('connection', (socket) => {
+  console.log(`New soul connected: ${socket.id}`);
+
+  // Listen for location updates from a client
+  socket.on('update_location', (data) => {
+    // Broadcast this user's location to everyone else
+    // We send 'socket.id' so the frontend can track unique fireflies
+    socket.broadcast.emit('firefly_update', {
+      id: socket.id,
+      lat: data.lat,
+      lng: data.lng
+    });
+  });
+
+  // Handle Disconnection
+  socket.on('disconnect', () => {
+    // Tell everyone to remove this specific firefly
+    io.emit('firefly_remove', socket.id);
+    console.log(`Soul departed: ${socket.id}`);
+  });
+});
+
+// 4. CHANGE app.listen TO server.listen
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
 const sentimentAnalyzer = new Sentiment();
 const filter = new Filter(); 
 
@@ -38,6 +80,7 @@ const ThoughtSchema = new mongoose.Schema({
   },
   isHealed: { type: Boolean, default: false },
   lightCount: { type: Number, default: 0 },
+  resonanceCount: { type: Number, default: 0 }, // <--- NEW FIELD ADDED
   createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
@@ -46,7 +89,7 @@ const Thought = mongoose.model('Thought', ThoughtSchema);
 
 // --- SECURITY & MODERATION TOOLS ---
 
-// 1. RATE LIMITER: Allow 20 posts per hour per IP (Increased slightly for testing)
+// 1. RATE LIMITER: Allow 20 posts per hour per IP
 const postLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, 
   max: 20, 
@@ -59,7 +102,7 @@ const postLimiter = rateLimit({
 const containsSensitiveInfo = (text) => {
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
   const phoneRegex = /(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/;
-  
+   
   if (emailRegex.test(text)) return "Privacy Alert: Please do not post email addresses.";
   if (phoneRegex.test(text)) return "Privacy Alert: Please do not post phone numbers.";
   return null;
@@ -74,6 +117,19 @@ app.get('/thoughts', async (req, res) => {
     res.json(thoughts);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch thoughts" });
+  }
+});
+
+// NEW ROUTE: Handle Resonance (Heartbeat)
+app.put('/thoughts/:id/resonate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Atomically increment the resonanceCount by 1
+    await Thought.findByIdAndUpdate(id, { $inc: { resonanceCount: 1 } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Resonance Error:", err);
+    res.status(500).json({ error: "Failed to resonate." });
   }
 });
 
@@ -107,8 +163,7 @@ app.post('/thoughts', postLimiter, async (req, res) => {
     
     console.log(`📝 New Thought: "${text}" | Type: ${sentimentType}`);
 
-    // --- 3. DYNAMIC RADIUS CALCULATION (NEW LOGIC) ---
-    // We check the density of lights around the TARGET location to determine the boost.
+    // --- 3. DYNAMIC RADIUS CALCULATION ---
     const EARTH_RADIUS_KM = 6378.1;
     const BASE_RADIUS_KM = 5;
     const baseRadiusRadians = BASE_RADIUS_KM / EARTH_RADIUS_KM;
@@ -135,13 +190,14 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       sentiment: sentimentType,
       location: userLocation,
       isHealed: sentimentType === 'positive', 
-      lightCount: 0
+      lightCount: 0,
+      resonanceCount: 0 // Initialize resonance
     });
 
     let message = "";
     let bornHealed = false;
 
-    // --- 5. HEALING LOGIC (With Dynamic Radius) ---
+    // --- 5. HEALING LOGIC ---
     if (sentimentType === 'positive') {
       // CASE A: User placed a BEACON
       await newThought.save();
@@ -159,7 +215,7 @@ app.post('/thoughts', postLimiter, async (req, res) => {
         // Check how many lights are around the sad pin to see if it heals
         const lightsAroundPin = await Thought.countDocuments({
           sentiment: 'positive',
-          location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, baseRadiusRadians ] } } // Healing requirement remains standard 5km proximity
+          location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, baseRadiusRadians ] } } 
         });
         
         sadPin.lightCount = lightsAroundPin;
@@ -177,18 +233,14 @@ app.post('/thoughts', postLimiter, async (req, res) => {
         const percentBoost = Math.round((boostMultiplier - 1) * 100);
         
         if (percentBoost > 0) {
-           // The message you requested:
            message = `Together we reach further. Your light reaches ${percentBoost}% further because of the glowing community nearby.`;
         } else {
-           // Fallback if no boost yet
            message = "Your light is placed. Gather more beacons nearby to expand your collective reach.";
         }
       }
 
     } else {
       // CASE B: User placed a HEAVY HEART
-      // We check if there are enough lights nearby to heal this immediately.
-      // We use the Dynamic Radius here to represent that the "Community is strong" and can reach this pin.
       
       const nearbyLights = await Thought.countDocuments({
         sentiment: 'positive',

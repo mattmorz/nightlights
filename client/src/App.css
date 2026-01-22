@@ -47,10 +47,15 @@ body, html {
   animation: light-cast-flicker 4s infinite;
 }
 
-/* 2. Distressed */
+/* 2. Distressed (UPDATED TO GRAY 🌑) */
 .beacon-distressed {
-  background: radial-gradient(circle at center, #c2f0ff 10%, #00aaff 100%);
-  box-shadow: 0 0 10px 2px rgba(0, 170, 255, 0.8), 0 0 20px 5px rgba(0, 170, 255, 0.4);
+  /* Changed from Blue to a Slate/Moon Gray Gradient */
+  background: radial-gradient(circle at center, #cbd5e1 10%, #475569 100%);
+  
+  /* Glow is now faint white/gray instead of blue */
+  box-shadow: 0 0 10px 2px rgba(148, 163, 184, 0.3), 0 0 20px 5px rgba(0, 0, 0, 0.5);
+  
+  /* We keep the same animation logic, it just pulses the gray now */
   animation: breathe-blue 5s infinite ease-in-out;
 }
 
@@ -95,7 +100,10 @@ body, html {
 .full-width { grid-column: span 2; }
 .stat-value { font-size: 2rem; font-weight: bold; }
 .stat-label { font-size: 0.85rem; color: #8b949e; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
-.text-blue { color: #00aaff; text-shadow: 0 0 10px rgba(0, 170, 255, 0.4); }
+.text-blue { 
+  color: #94a3b8; /* Matches the gray pin */
+  text-shadow: 0 0 10px rgba(148, 163, 184, 0.3); 
+}
 .text-yellow { color: #ffdd00; text-shadow: 0 0 10px rgba(255, 221, 0, 0.4); }
 .text-cyan { color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.4); }
 .stat-footer { font-size: 0.9rem; color: #8b949e; margin-bottom: 20px; border-top: 1px solid #30363d; padding-top: 15px; }
@@ -207,4 +215,58 @@ button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: point
   font-size: 0.9rem;
   color: #94a3b8;
   line-height: 1.4;
+}
+
+/* --- ABOUT MODAL UPDATES --- */
+
+/* The Intro Paragraph */
+.about-intro {
+  font-size: 0.95rem;
+  color: #cbd5e1; /* Light gray */
+  line-height: 1.5;
+  margin-bottom: 15px;
+  padding: 0 10px;
+}
+
+/* The Horizontal Line */
+.divider-line {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(168, 85, 247, 0.5), transparent); /* Fading purple line */
+  margin: 15px 0 20px 0;
+  width: 100%;
+}
+
+/* Ensure the grid fits nicely */
+.about-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 15px;
+  text-align: left;
+}
+
+.about-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+/* Highlight the Healing Step */
+.highlight-row {
+  background: rgba(168, 85, 247, 0.08);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.about-text strong {
+  color: #fff;
+  font-size: 1rem;
+}
+
+.about-text p {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  margin: 2px 0 0 0;
 }

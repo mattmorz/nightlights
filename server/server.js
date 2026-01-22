@@ -3,19 +3,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const Sentiment = require('sentiment');
-const rateLimit = require('express-rate-limit'); // NEW: Limits repeated requests
-const Filter = require('bad-words'); // NEW: Filters profanity
+const rateLimit = require('express-rate-limit'); 
+const Filter = require('bad-words'); 
 
 // --- CONFIGURATION ---
 const app = express();
 const PORT = process.env.PORT || 5001;
 const sentimentAnalyzer = new Sentiment();
-const filter = new Filter(); // Initialize profanity filter
+const filter = new Filter(); 
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-// Trust proxy is required if you deploy behind a reverse proxy (like Heroku, Vercel, Nginx)
 app.set('trust proxy', 1); 
 
 // --- DATABASE CONNECTION ---
@@ -47,20 +46,18 @@ const Thought = mongoose.model('Thought', ThoughtSchema);
 
 // --- SECURITY & MODERATION TOOLS ---
 
-// 1. RATE LIMITER: Allow only 10 posts per hour per IP
+// 1. RATE LIMITER: Allow 20 posts per hour per IP (Increased slightly for testing)
 const postLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 Hour
-  max: 10, // Limit each IP to 10 requests per windowMs
+  windowMs: 60 * 60 * 1000, 
+  max: 20, 
   message: { error: "You are sending too many signals. Please rest for a while and try again later." },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  standardHeaders: true, 
+  legacyHeaders: false, 
 });
 
 // 2. CONTENT VALIDATION FUNCTION
 const containsSensitiveInfo = (text) => {
-  // Regex for Email
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-  // Regex for Phone Numbers (Generic 7-15 digits, allows spaces/dashes)
   const phoneRegex = /(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/;
   
   if (emailRegex.test(text)) return "Privacy Alert: Please do not post email addresses.";
@@ -80,42 +77,58 @@ app.get('/thoughts', async (req, res) => {
   }
 });
 
-// POST: Create a new thought (Applied Rate Limiter here)
+// POST: Create a new thought
 app.post('/thoughts', postLimiter, async (req, res) => {
   try {
     const { text, trap } = req.body;
 
-    // 1. FORCE NUMBERS
+    // 1. INPUT VALIDATION
     const lat = Number(req.body.lat);
     const lng = Number(req.body.lng);
 
-    // 2. HONEYPOT & BASIC VALIDATION
-    if (trap && trap.length > 0) return res.json({ success: true }); // Silent fail for bots
+    if (trap && trap.length > 0) return res.json({ success: true }); 
     if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
       return res.status(400).json({ error: "Invalid Location Data" });
     }
     if (!text || text.length > 500) return res.status(400).json({ error: "Message too long." });
 
-    // 3. PROFANITY CHECK
     if (filter.isProfane(text)) {
       return res.status(400).json({ error: "Your message contains words that are not allowed in this safe space." });
     }
 
-    // 4. PRIVACY CHECK (Emails & Phones)
     const privacyError = containsSensitiveInfo(text);
     if (privacyError) {
       return res.status(400).json({ error: privacyError });
     }
 
-    // 5. SERVER-SIDE SENTIMENT ANALYSIS
+    // 2. ANALYZE SENTIMENT
     const analysis = sentimentAnalyzer.analyze(text);
     const sentimentType = analysis.score < 0 ? 'distressed' : 'positive';
     
-    console.log(`📝 New Thought: "${text}" | Score: ${analysis.score} | Type: ${sentimentType}`);
+    console.log(`📝 New Thought: "${text}" | Type: ${sentimentType}`);
 
-    // 6. PREPARE DATA
+    // --- 3. DYNAMIC RADIUS CALCULATION (NEW LOGIC) ---
+    // We check the density of lights around the TARGET location to determine the boost.
+    const EARTH_RADIUS_KM = 6378.1;
+    const BASE_RADIUS_KM = 5;
+    const baseRadiusRadians = BASE_RADIUS_KM / EARTH_RADIUS_KM;
+
+    // Count existing lights nearby
+    const nearbyPositiveCount = await Thought.countDocuments({
+        sentiment: 'positive',
+        location: { $geoWithin: { $centerSphere: [ [lng, lat], baseRadiusRadians ] } }
+    });
+
+    // Calculate Boost: Every 10 lights = +2% Range
+    const tier = Math.floor(nearbyPositiveCount / 10);
+    const boostMultiplier = 1 + (tier * 0.02); 
+    const dynamicRadiusKm = BASE_RADIUS_KM * boostMultiplier;
+    const dynamicRadiusRadians = dynamicRadiusKm / EARTH_RADIUS_KM;
+
+    console.log(`⚡ Density: ${nearbyPositiveCount} lights | Boost: ${Math.round((boostMultiplier-1)*100)}% | Range: ${dynamicRadiusKm.toFixed(2)}km`);
+
+    // --- 4. CREATE OBJECT ---
     const userLocation = { type: 'Point', coordinates: [lng, lat] }; 
-    const RADIUS_RADIANS = 5 / 6378.1; // 5km radius
 
     const newThought = new Thought({
       text,
@@ -128,23 +141,25 @@ app.post('/thoughts', postLimiter, async (req, res) => {
     let message = "";
     let bornHealed = false;
 
-    // 7. HEALING LOGIC
+    // --- 5. HEALING LOGIC (With Dynamic Radius) ---
     if (sentimentType === 'positive') {
-      // --- CASE A: User placed a BEACON (Light) ---
+      // CASE A: User placed a BEACON
       await newThought.save();
 
+      // Search for distressed pins using the BOOSTED (Dynamic) Radius 
       const nearbyDistressed = await Thought.find({
         sentiment: 'distressed',
         isHealed: false,
-        location: { $geoWithin: { $centerSphere: [ [lng, lat], RADIUS_RADIANS ] } }
+        location: { $geoWithin: { $centerSphere: [ [lng, lat], dynamicRadiusRadians ] } }
       });
       
       let actuallyHealedSomeone = false;
 
       for (const sadPin of nearbyDistressed) {
+        // Check how many lights are around the sad pin to see if it heals
         const lightsAroundPin = await Thought.countDocuments({
           sentiment: 'positive',
-          location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, RADIUS_RADIANS ] } }
+          location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, baseRadiusRadians ] } } // Healing requirement remains standard 5km proximity
         });
         
         sadPin.lightCount = lightsAroundPin;
@@ -157,16 +172,27 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       }
 
       if (actuallyHealedSomeone) {
-        message = "Your radiance broke the darkness. You have healed a neighbor.";
+        message = `Your light traveled ${(dynamicRadiusKm).toFixed(1)}km and healed a neighbor.`;
       } else {
-        message = "Your light has been placed. It shines for those nearby.";
+        const percentBoost = Math.round((boostMultiplier - 1) * 100);
+        
+        if (percentBoost > 0) {
+           // The message you requested:
+           message = `Together we reach further. Your light reaches ${percentBoost}% further because of the glowing community nearby.`;
+        } else {
+           // Fallback if no boost yet
+           message = "Your light is placed. Gather more beacons nearby to expand your collective reach.";
+        }
       }
 
     } else {
-      // --- CASE B: User placed a HEAVY HEART (Distressed) ---
+      // CASE B: User placed a HEAVY HEART
+      // We check if there are enough lights nearby to heal this immediately.
+      // We use the Dynamic Radius here to represent that the "Community is strong" and can reach this pin.
+      
       const nearbyLights = await Thought.countDocuments({
         sentiment: 'positive',
-        location: { $geoWithin: { $centerSphere: [ [lng, lat], RADIUS_RADIANS ] } }
+        location: { $geoWithin: { $centerSphere: [ [lng, lat], dynamicRadiusRadians ] } }
       });
       
       newThought.lightCount = nearbyLights;
@@ -174,15 +200,14 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       if (nearbyLights >= 5) {
         newThought.isHealed = true;
         bornHealed = true;
-        message = "You are not alone here. You are standing in the circle of care.";
+        message = "You are not alone. The surrounding lights have already caught you.";
       } else {
-        message = "We hear you. Your light is now visible to the world.";
+        message = "Signal sent. The world now sees your shadow.";
       }
 
       await newThought.save();
     }
 
-    // 8. RESPOND
     res.json({ success: true, sentiment: sentimentType, message, bornHealed });
 
   } catch (err) {
@@ -191,7 +216,6 @@ app.post('/thoughts', postLimiter, async (req, res) => {
   }
 });
 
-// Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

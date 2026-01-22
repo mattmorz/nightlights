@@ -84,15 +84,74 @@ body, html {
 .stats-btn { top: 130px; right: 20px; }
 
 /* --- MODALS --- */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: flex; justify-content: center; align-items: center; z-index: 9999; }
-.modal-content { background: #161b22; color: #c9d1d9; padding: 2rem; border-radius: 12px; width: 90%; max-width: 400px; border: 1px solid #30363d; box-shadow: 0 0 50px rgba(0,0,0,0.8); text-align: center; }
+.modal-overlay { 
+  position: fixed; 
+  top: 0; left: 0; right: 0; bottom: 0; 
+  background: rgba(0,0,0,0.85); 
+  backdrop-filter: blur(5px); /* Adds a blur effect to the background map */
+  display: flex; 
+  justify-content: center; 
+  align-items: center; 
+  z-index: 9999; 
+  padding: 10px; /* Prevents edges touching screen on mobile */
+}
+
+.modal-content { 
+  background: #161b22; 
+  color: #c9d1d9; 
+  padding: 2rem; 
+  border-radius: 12px; 
+  width: 90%; 
+  max-width: 450px; 
+  border: 1px solid #30363d; 
+  box-shadow: 0 0 50px rgba(0,0,0,0.8); 
+  text-align: center; 
+  
+  /* CRITICAL FIXES FOR SMALL SCREENS */
+  max-height: 85vh;       /* Never taller than 85% of screen */
+  overflow-y: auto;       /* Enable internal scrolling */
+  display: flex;
+  flex-direction: column; /* Stacks content neatly */
+}
+
+/* Custom Scrollbar for the modal */
+.modal-content::-webkit-scrollbar { width: 8px; }
+.modal-content::-webkit-scrollbar-track { background: #0d1117; border-radius: 4px; }
+.modal-content::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+.modal-content::-webkit-scrollbar-thumb:hover { background: #58a6ff; }
+
+/* LEGEND & ABOUT TEXT */
 .about-content { text-align: left; line-height: 1.6; }
 .about-section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #333; }
 .legend-item { display: flex; align-items: center; margin: 10px 0; }
-.legend-dot { width: 15px; height: 15px; border-radius: 50%; margin-right: 10px; display: inline-block; }
-.l-blue { background: #0044ff; box-shadow: 0 0 5px #0044ff; }
+.legend-dot { width: 15px; height: 15px; border-radius: 50%; margin-right: 10px; display: inline-block; flex-shrink: 0; }
+
+/* Legend Colors */
+.l-blue { background: #64748b; box-shadow: 0 0 5px #64748b; } /* Updated to match Gray/Slate pin */
 .l-yellow { background: #ffd700; box-shadow: 0 0 5px #ffd700; }
-.l-star { background: cyan; box-shadow: 0 0 5px cyan; }
+.l-star { background: #00ffff; box-shadow: 0 0 5px #00ffff; }
+
+/* --- RESPONSIVE FIX (Short Screens / Mobile Landscape) --- */
+@media (max-height: 750px) {
+  .modal-content {
+    padding: 1.5rem; /* Reduce padding */
+  }
+  
+  .notification-icon {
+    font-size: 2rem; /* Shrink the ghost/icon */
+    margin-bottom: 10px;
+  }
+  
+  textarea {
+    height: 70px; /* Make text input shorter */
+    margin-top: 10px;
+  }
+  
+  .modal-content h3 {
+    font-size: 1.2rem;
+    margin-bottom: 10px;
+  }
+}
 
 /* STATS GRID */
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }

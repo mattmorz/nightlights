@@ -154,7 +154,11 @@ function MapHandler({ setZoomLevel, setTempLocation, setIsModalOpen, userLocatio
       const distance = e.latlng.distanceTo(userLocation);
       if (distance > radiusLimit) {
         const distKm = (distance / 1000).toFixed(1);
-        showNotification("🔭", "Beyond the Horizon", `Target is ${distKm}km away. Range limited.`);
+        showNotification(
+          "🔭", 
+          "Out of Reach", 
+          `That soul is waiting ${distKm}km away. Your glow is not yet bright enough to bridge the distance.`
+        );
         return;
       }
       setTempLocation(e.latlng);

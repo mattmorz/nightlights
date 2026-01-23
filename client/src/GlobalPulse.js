@@ -1,60 +1,80 @@
-import React, { useEffect, useState } from 'react';
-import './App.css'; 
+import React, { useEffect, useState, useRef } from 'react';
+import './App.css';
 
 const GlobalPulse = ({ socket }) => {
-  const [pulse, setPulse] = useState(null);
-  const [animating, setAnimating] = useState(false);
+  // The line of waiting messages
+  const [queue, setQueue] = useState([]);
+  // The currently showing message
+  const [activePulse, setActivePulse] = useState(null);
+  
+  // To track animation styles per message
   const [starStyle, setStarStyle] = useState({});
 
+  // 1. LISTEN & ADD TO QUEUE
   useEffect(() => {
     if (!socket) return;
 
     socket.on('pulse_event', (data) => {
-      if (animating) return;
-
-      // 1. CALCULATE RANDOM ENTRY POINT
-      // We vary the 'right' property to shift where it starts on the top edge
-      // Random value between -100px (far right) and 600px (towards center)
-      const randomRight = Math.floor(Math.random() * 700) - 100;
-      
-      // Random speed between 2s and 4s
-      const randomDuration = (Math.random() * 2 + 2).toFixed(1);
-
-      setStarStyle({
-        right: `${randomRight}px`,
-        animationDuration: `${randomDuration}s`
-      });
-
-      // 2. TRIGGER ANIMATION
-      setAnimating(true);
-      setPulse(data);
-
-      // 3. CLEANUP
-      const timer = setTimeout(() => {
-        setPulse(null);
-        setAnimating(false);
-      }, parseFloat(randomDuration) * 1000 + 500); // Wait for animation to finish
-
-      return () => clearTimeout(timer);
+      setQueue((prevQueue) => [...prevQueue, data]);
     });
 
     return () => {
       socket.off('pulse_event');
     };
-  }, [socket, animating]);
+  }, [socket]);
 
-  if (!pulse) return null;
+  // 2. PROCESS THE QUEUE
+  useEffect(() => {
+    // If we are already showing something, or if the queue is empty, do nothing.
+    if (activePulse || queue.length === 0) return;
+
+    // --- SETUP NEW ANIMATION ---
+    const nextMsg = queue[0];
+    const duration = 4; // Seconds per animation
+
+    // Randomize position for this specific star
+    const randomRight = Math.floor(Math.random() * 700) - 100;
+    
+    setStarStyle({
+      right: `${randomRight}px`,
+      animationDuration: `${duration}s`
+    });
+
+    // Start the show
+    setActivePulse(nextMsg);
+    
+    // Remove this item from the waiting list
+    setQueue((prev) => prev.slice(1));
+
+    // --- CLEANUP AFTER ANIMATION ---
+    const timer = setTimeout(() => {
+      setActivePulse(null); // This triggers the useEffect again to pick the next one
+    }, duration * 1000);
+
+    return () => clearTimeout(timer);
+  }, [queue, activePulse]);
+
+  if (!activePulse) return null;
 
   return (
     <>
-      {/* 1. TEXT (Fixed Top Center) */}
+      {/* 1. TEXT */}
       <div className="pulse-message-container">
-         <span className="pulse-icon">{pulse.sentiment === 'positive' ? '✦' : '★'}</span>
-         {pulse.message}
+         <span className="pulse-icon">
+           {activePulse.sentiment === 'positive' ? '✦' : '★'}
+         </span>
+         {activePulse.message}
+         {/* Optional: Show queue count if busy */}
+         {queue.length > 0 && <span style={{fontSize:'0.6rem', opacity:0.7, marginLeft:'8px'}}>+{queue.length} more</span>}
       </div>
 
-      {/* 2. SHOOTING STAR (Styled like your snippet) */}
-      <div className="shooting-star-head" style={starStyle}></div>
+      {/* 2. STAR */}
+      {/* key={activePulse.message} forces React to destroy and recreate the div, resetting the animation */}
+      <div 
+        key={activePulse.message} 
+        className="shooting-star-head" 
+        style={starStyle}
+      ></div>
     </>
   );
 };

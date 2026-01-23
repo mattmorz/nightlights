@@ -8,6 +8,81 @@ const Sentiment = require('sentiment');
 const rateLimit = require('express-rate-limit'); 
 const Filter = require('bad-words'); 
 
+// --- CONFIG: PHILIPPINE CITIES DATA ---
+const CITIES = [
+  // --- NCR & LUZON ---
+  { name: "Manila", lat: 14.5995, lng: 120.9842 },
+  { name: "Quezon City", lat: 14.6760, lng: 121.0437 },
+  { name: "Makati", lat: 14.5547, lng: 121.0244 },
+  { name: "Taguig", lat: 14.5176, lng: 121.0509 },
+  { name: "Baguio", lat: 16.4023, lng: 120.5960 },
+  { name: "Tagaytay", lat: 14.1153, lng: 120.9621 },
+  { name: "Vigan", lat: 17.5702, lng: 120.3870 },
+  { name: "Laoag", lat: 18.1960, lng: 120.5927 },
+  { name: "Tuguegarao", lat: 17.6131, lng: 121.7269 },
+  { name: "Angeles (Pampanga)", lat: 15.1484, lng: 120.5844 },
+  { name: "Olongapo", lat: 14.8386, lng: 120.2842 },
+  { name: "Batangas City", lat: 13.7565, lng: 121.0583 },
+  { name: "Lucena", lat: 13.9374, lng: 121.6172 },
+  { name: "Naga", lat: 13.6218, lng: 123.1948 },
+  { name: "Legazpi", lat: 13.1391, lng: 123.7438 },
+  { name: "Puerto Princesa", lat: 9.7392, lng: 118.7350 },
+  { name: "El Nido", lat: 11.2543, lng: 119.4293 },
+
+  // --- VISAYAS ---
+  { name: "Cebu City", lat: 10.3157, lng: 123.8854 },
+  { name: "Lapu-Lapu", lat: 10.3103, lng: 123.9494 },
+  { name: "Iloilo City", lat: 10.7202, lng: 122.5621 },
+  { name: "Bacolod", lat: 10.6765, lng: 122.9509 },
+  { name: "Tacloban", lat: 11.2433, lng: 124.9988 },
+  { name: "Ormoc", lat: 11.0050, lng: 124.6075 },
+  { name: "Dumaguete", lat: 9.3068, lng: 123.3045 },
+  { name: "Tagbilaran (Bohol)", lat: 9.6500, lng: 123.8500 },
+  { name: "Roxas City", lat: 11.5853, lng: 122.7511 },
+  { name: "Boracay", lat: 11.9674, lng: 121.9248 },
+
+  // --- MINDANAO ---
+  { name: "Davao City", lat: 7.1907, lng: 125.4553 },
+  { name: "Cagayan de Oro", lat: 8.4542, lng: 124.6319 },
+  { name: "Zamboanga City", lat: 6.9214, lng: 122.0790 },
+  { name: "General Santos", lat: 6.1127, lng: 125.1716 },
+  { name: "Iligan", lat: 8.2280, lng: 124.2452 },
+  { name: "Butuan", lat: 8.9492, lng: 125.5430 },
+  { name: "Cotabato City", lat: 7.2244, lng: 124.2460 },
+  { name: "Surigao City", lat: 9.8027, lng: 125.4989 },
+  { name: "Siargao", lat: 9.8695, lng: 126.0465 }
+];
+
+// --- HELPER: Identify Region (Nearest Neighbor) ---
+const getRegionName = (lat, lng) => {
+  let closestCity = "the Unknown";
+  let minDistance = Infinity;
+
+  // Simple Euclidean distance approximation
+  // (Efficient enough for this purpose)
+  const calculateDist = (lat1, lng1, lat2, lng2) => {
+    return Math.sqrt(Math.pow(lat2 - lat1, 2) + Math.pow(lng2 - lng1, 2));
+  };
+
+  CITIES.forEach(city => {
+    const dist = calculateDist(lat, lng, city.lat, city.lng);
+    
+    // If this city is closer than the last one found...
+    if (dist < minDistance) {
+      minDistance = dist;
+      closestCity = city.name;
+    }
+  });
+
+  // OPTIONAL: If the user is excessively far (e.g., > 2.0 degrees / ~220km) from ANY city
+  // you can revert to "the Philippines" or "the Ocean"
+  if (minDistance > 2.0) {
+    return "the Philippines";
+  }
+
+  return closestCity;
+};
+
 // --- CONFIGURATION ---
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -157,6 +232,8 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       return res.status(400).json({ error: privacyError });
     }
 
+   
+
     // 2. ANALYZE SENTIMENT
     const analysis = sentimentAnalyzer.analyze(text);
     const sentimentType = analysis.score < 0 ? 'distressed' : 'positive';
@@ -259,7 +336,18 @@ app.post('/thoughts', postLimiter, async (req, res) => {
 
       await newThought.save();
     }
+     // Notify map to refresh pins
+    io.emit('beacons_update');
 
+    // --- NEW: GLOBAL PULSE BROADCAST ---
+    const region = getRegionName(lat, lng);
+    const action = sentimentType === 'positive' ? "lit a beacon" : "sent a signal";
+    
+    // Broadcast the specific message to all connected clients
+    io.emit('pulse_event', {
+      message: `Someone in ${region} just ${action}.`,
+      sentiment: sentimentType
+    });
     res.json({ success: true, sentiment: sentimentType, message, bornHealed });
 
   } catch (err) {

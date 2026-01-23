@@ -6,6 +6,7 @@ import io from 'socket.io-client'; // --- NEW IMPORT ---
 import 'leaflet/dist/leaflet.css';
 import './App.css';
 import StoryModal from './StoryModal';
+import GlobalPulse from './GlobalPulse';
 
 
 // --- CONFIGURATION ---
@@ -315,7 +316,7 @@ function App() {
         
         {/* --- REAL TIME FIREFLIES --- */}
         <FireflyLayer />
-
+        <GlobalPulse socket={socket} />
         <MapHandler setZoomLevel={setZoomLevel} setTempLocation={setTempLocation} setIsModalOpen={setIsModalOpen} userLocation={userLocation} showNotification={showNotification} radiusLimit={currentRadius} />
 
         {userLocation && <Circle center={userLocation} radius={currentRadius} pathOptions={{ color: tierLevel >= 3 ? '#ffd700' : '#00ffff', fillColor: tierLevel >= 3 ? '#ffd700' : '#00ffff', fillOpacity: 0.08, weight: 1, dashArray: '10, 10' }} />}

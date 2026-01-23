@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Night Lights",
+  "name":"Night Lights: We are all just walking each other home.",
   "icons": [
     {
       "src": "favicon.ico",

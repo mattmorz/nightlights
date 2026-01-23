@@ -427,3 +427,141 @@ button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: point
   100% { opacity: 0; transform: scale(0.5); }
 }
 
+/* --- STORY MODAL STYLES --- */
+
+/* Import a "Storybook" Font */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+
+.story-modal-width {
+  max-width: 550px; /* Slightly wider for reading */
+  padding: 0; /* We handle padding inside for full-bleed headers */
+  overflow: hidden; /* Contains the internal scroll */
+}
+
+.story-header {
+  background: linear-gradient(180deg, rgba(22, 27, 34, 1) 0%, rgba(13, 17, 23, 1) 100%);
+  padding: 2rem 2rem 1rem 2rem;
+  text-align: center;
+  border-bottom: 1px solid #30363d;
+}
+
+.story-main-icon {
+  font-size: 3rem;
+  color: #58a6ff;
+  margin-bottom: 10px;
+  filter: drop-shadow(0 0 15px rgba(88, 166, 255, 0.5));
+}
+
+.story-header h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2rem;
+  margin: 0;
+  background: linear-gradient(90deg, #e6edf3, #8b949e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.story-divider {
+  width: 50px;
+  height: 3px;
+  background: #58a6ff;
+  margin: 15px auto 0 auto;
+  border-radius: 2px;
+}
+
+.story-scroll-container {
+  padding: 2rem;
+  max-height: 60vh; /* Keeps the footer visible */
+  overflow-y: auto;
+}
+
+/* Custom Scrollbar for story */
+.story-scroll-container::-webkit-scrollbar { width: 6px; }
+.story-scroll-container::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+.story-intro {
+  font-family: 'Playfair Display', serif;
+  font-style: italic;
+  font-size: 1.1rem;
+  text-align: center;
+  color: #c9d1d9;
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+
+/* --- STORY CARDS --- */
+.story-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  border-radius: 12px;
+  margin-bottom: 15px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.story-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.card-icon {
+  font-size: 1.8rem;
+  min-width: 40px;
+  display: flex;
+  justify-content: center;
+  padding-top: 5px;
+}
+
+.card-text h3 {
+  margin: 0 0 5px 0;
+  font-family: 'Playfair Display', serif;
+  font-size: 1.2rem;
+  letter-spacing: 0.5px;
+}
+
+.card-text p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #8b949e;
+  line-height: 1.5;
+}
+
+/* Color Themes for Cards */
+.card-purple { border-left: 3px solid #a855f7; }
+.card-purple .card-icon { color: #a855f7; text-shadow: 0 0 10px rgba(168, 85, 247, 0.4); }
+
+.card-gold { border-left: 3px solid #ffd700; }
+.card-gold .card-icon { color: #ffd700; text-shadow: 0 0 10px rgba(255, 215, 0, 0.4); }
+
+.card-gray { border-left: 3px solid #94a3b8; }
+.card-gray .card-icon { color: #94a3b8; }
+
+.card-cyan { border-left: 3px solid #00ffff; background: linear-gradient(90deg, rgba(0, 255, 255, 0.05), transparent); }
+.card-cyan .card-icon { color: #00ffff; text-shadow: 0 0 15px #00ffff; }
+
+.card-pink { border-left: 3px solid #ff69b4; }
+.card-pink .card-icon { color: #ff69b4; }
+
+/* Mini Animation Demos inside the text */
+.firefly-demo {
+  width: 12px; height: 12px;
+  background-color: #ffd700;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #ffd700;
+  animation: fireflyFade 2s infinite ease-in-out;
+}
+
+.pulse-demo {
+  animation: heartbeat 1.5s infinite ease-in-out;
+}
+
+/* Footer override for this modal */
+.story-modal-width .modal-actions {
+  padding: 1.5rem 2rem;
+  border-top: 1px solid #30363d;
+  background: #0d1117;
+}
+.story-btn { top: 180px; right: 20px; }

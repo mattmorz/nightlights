@@ -5,6 +5,8 @@ import axios from 'axios';
 import io from 'socket.io-client'; // --- NEW IMPORT ---
 import 'leaflet/dist/leaflet.css';
 import './App.css';
+import StoryModal from './StoryModal';
+
 
 // --- CONFIGURATION ---
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/thoughts';
@@ -165,6 +167,7 @@ function MapHandler({ setZoomLevel, setTempLocation, setIsModalOpen, userLocatio
 // --- MAIN COMPONENT ---
 function App() {
   const [pins, setPins] = useState([]);
+  const [showStory, setShowStory] = useState(false); // Or true if you want it to open on load
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(true);
@@ -190,7 +193,7 @@ function App() {
   useEffect(() => {
     const bgm = audioRefs.current.bgm;
     bgm.loop = true;
-    bgm.volume = 0.3;
+    bgm.volume = 0.2;
     return () => { bgm.pause(); };
   }, []);
 
@@ -337,9 +340,17 @@ function App() {
       {boostPercentage > 0 && <div className="boost-badge" style={{ position: 'absolute', bottom: '30px', left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: 'rgba(13, 17, 23, 0.9)', border: `1px solid ${tierLevel >= 3 ? '#ffd700' : '#00ffff'}`, padding: '8px 16px', borderRadius: '20px', color: tierLevel >= 3 ? '#ffd700' : '#00ffff', fontWeight: 'bold' }}>⚡ Range Boosted: +{boostPercentage}% ({nearbyLightCount} Lights nearby)</div>}
       <button className="map-overlay-btn info-btn" onClick={() => setIsAboutOpen(true)} title="About">?</button>
       <button className="map-overlay-btn stats-btn" onClick={() => setIsStatsOpen(true)} title="Statistics">📊</button>
+      {/* Inside your map-view container */}
+      <button 
+        className="map-overlay-btn story-btn" 
+        onClick={() => setShowStory(true)} 
+        title="Read the Story"
+      >
+        📖
+      </button>
 
       {isStatsOpen && <div className="modal-overlay"><div className="modal-content"><h3>Community Pulse 📊</h3><div className="stats-grid"><div className="stat-card"><div className="stat-value text-blue">{stats.heavy}</div><div className="stat-label">Heavy Hearts</div></div><div className="stat-card"><div className="stat-value text-yellow">{stats.beacons}</div><div className="stat-label">Beacons Lit</div></div><div className="stat-card full-width"><div className="stat-value text-cyan">{stats.healed}</div><div className="stat-label">Souls Healed</div></div></div><button onClick={() => setIsStatsOpen(false)} className="btn-submit">Close</button></div></div>}
-      
+      {showStory && <StoryModal onClose={() => setShowStory(false)} />}
       {isAboutOpen && (
         <div className="modal-overlay">
           <div className="modal-content about-content">
@@ -352,7 +363,7 @@ function App() {
               <div className="about-row"><div className="about-icon-container">👀</div><div className="about-text"><strong>1. Read the Signals</strong><p>Gray pins (🌑) are <strong>Heavy Hearts</strong>. Bright pins (✨) are <strong>Beacons</strong>.</p></div></div>
               <div className="about-row"><div className="about-icon-container">💓</div><div className="about-text"><strong>2. Resonate</strong><p>Click the <strong>Resonate</strong> button inside a popup to silently tell someone "I feel this too."</p></div></div>
               <div className="about-row highlight-row"><div className="about-icon-container">❤️‍🩹</div><div className="about-text"><strong>3. Heal the Darkness</strong><p>Place a light near a Heavy Heart. When <strong>5 lights</strong> gather, the shadow breaks.</p></div></div>
-              <div className="about-row" style={{ border: '1px solid #00ffff', background: 'rgba(0, 255, 255, 0.05)' }}><div className="about-icon-container">⚡</div><div className="about-text"><strong>4. Amplify the Reach</strong><p>Together we go further. Every <strong>10 lights</strong> expands the signal range by <strong>2%</strong>.</p></div></div>
+              <div className="about-row" style={{ border: '1px solid #00ffff', background: 'rgba(0, 255, 255, 0.05)' }}><div className="about-icon-container">⚡</div><div className="about-text"><strong>4. Amplify the Reach</strong><p>Together we go further. Every <strong>10 lights</strong> expands the signal range by <strong>2%.</strong></p></div></div>
             </div>
             <button onClick={handleEnterNight} className="btn-submit" style={{ width: '100%', marginTop: '10px' }}>Enter the Night {isMuted ? "🔇" : "🔊"}</button>
           </div>

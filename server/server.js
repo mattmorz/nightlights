@@ -184,6 +184,25 @@ const containsSensitiveInfo = (text) => {
 };
 
 // --- ROUTES ---
+// =========================================================
+app.get('/health', (req, res) => {
+  const { key } = req.query;
+  const validSecret = process.env.CRON_SECRET;
+
+  // 1. Safety Check: Ensure the variable exists in Render
+  if (!validSecret) {
+    console.error("❌ CRON_SECRET is missing in Render Environment Variables!");
+    return res.status(500).send("Server Configuration Error");
+  }
+
+  // 2. Validate Key
+  if (key !== validSecret) {
+    return res.status(403).send('Unauthorized');
+  }
+
+  // 3. Success
+  res.send('OK'); 
+});
 
 // GET: Fetch all thoughts
 app.get('/thoughts', async (req, res) => {

@@ -58,24 +58,18 @@ const getRegionName = (lat, lng) => {
   let closestCity = "the Unknown";
   let minDistance = Infinity;
 
-  // Simple Euclidean distance approximation
-  // (Efficient enough for this purpose)
   const calculateDist = (lat1, lng1, lat2, lng2) => {
     return Math.sqrt(Math.pow(lat2 - lat1, 2) + Math.pow(lng2 - lng1, 2));
   };
 
   CITIES.forEach(city => {
     const dist = calculateDist(lat, lng, city.lat, city.lng);
-    
-    // If this city is closer than the last one found...
     if (dist < minDistance) {
       minDistance = dist;
       closestCity = city.name;
     }
   });
 
-  // OPTIONAL: If the user is excessively far (e.g., > 2.0 degrees / ~220km) from ANY city
-  // you can revert to "the Philippines" or "the Ocean"
   if (minDistance > 2.0) {
     return "the Philippines";
   }
@@ -93,7 +87,7 @@ const server = http.createServer(app);
 // 2. Initialize Socket.io with CORS
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:3000", "https://nightlights-eight.vercel.app"], // Allow connections from your React app
+    origin: ["http://localhost:3000", "https://nightlights-eight.vercel.app"], 
     methods: ["GET", "POST", "PUT"]
   }
 });
@@ -104,8 +98,6 @@ io.on('connection', (socket) => {
 
   // Listen for location updates from a client
   socket.on('update_location', (data) => {
-    // Broadcast this user's location to everyone else
-    // We send 'socket.id' so the frontend can track unique fireflies
     socket.broadcast.emit('firefly_update', {
       id: socket.id,
       lat: data.lat,
@@ -113,17 +105,10 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Handle Disconnection
   socket.on('disconnect', () => {
-    // Tell everyone to remove this specific firefly
     io.emit('firefly_remove', socket.id);
     console.log(`Soul departed: ${socket.id}`);
   });
-});
-
-// 4. CHANGE app.listen TO server.listen
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
 });
 
 const sentimentAnalyzer = new Sentiment();
@@ -155,7 +140,7 @@ const ThoughtSchema = new mongoose.Schema({
   },
   isHealed: { type: Boolean, default: false },
   lightCount: { type: Number, default: 0 },
-  resonanceCount: { type: Number, default: 0 }, // <--- NEW FIELD ADDED
+  resonanceCount: { type: Number, default: 0 }, 
   createdAt: { type: Date, default: Date.now, expires: 86400 } 
 });
 
@@ -164,7 +149,6 @@ const Thought = mongoose.model('Thought', ThoughtSchema);
 
 // --- SECURITY & MODERATION TOOLS ---
 
-// 1. RATE LIMITER: Allow 20 posts per hour per IP
 const postLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, 
   max: 20, 
@@ -173,7 +157,6 @@ const postLimiter = rateLimit({
   legacyHeaders: false, 
 });
 
-// 2. CONTENT VALIDATION FUNCTION
 const containsSensitiveInfo = (text) => {
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
   const phoneRegex = /(\+?\d{1,3}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}/;
@@ -184,23 +167,20 @@ const containsSensitiveInfo = (text) => {
 };
 
 // --- ROUTES ---
-// =========================================================
+
 app.get('/health', (req, res) => {
   const { key } = req.query;
   const validSecret = process.env.CRON_SECRET;
 
-  // 1. Safety Check: Ensure the variable exists in Render
   if (!validSecret) {
     console.error("❌ CRON_SECRET is missing in Render Environment Variables!");
     return res.status(500).send("Server Configuration Error");
   }
 
-  // 2. Validate Key
   if (key !== validSecret) {
     return res.status(403).send('Unauthorized');
   }
 
-  // 3. Success
   res.send('OK'); 
 });
 
@@ -214,12 +194,19 @@ app.get('/thoughts', async (req, res) => {
   }
 });
 
-// NEW ROUTE: Handle Resonance (Heartbeat)
+// PUT: Handle Resonance
 app.put('/thoughts/:id/resonate', async (req, res) => {
   try {
     const { id } = req.params;
-    // Atomically increment the resonanceCount by 1
-    await Thought.findByIdAndUpdate(id, { $inc: { resonanceCount: 1 } });
+    const updatedThought = await Thought.findByIdAndUpdate(
+      id, 
+      { $inc: { resonanceCount: 1 } }, 
+      { new: true } 
+    );
+    
+    // Broadcast the update to socket listeners
+    io.emit('thought_updated', updatedThought);
+    
     res.json({ success: true });
   } catch (err) {
     console.error("Resonance Error:", err);
@@ -251,8 +238,6 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       return res.status(400).json({ error: privacyError });
     }
 
-   
-
     // 2. ANALYZE SENTIMENT
     const analysis = sentimentAnalyzer.analyze(text);
     const sentimentType = analysis.score < 0 ? 'distressed' : 'positive';
@@ -264,15 +249,13 @@ app.post('/thoughts', postLimiter, async (req, res) => {
     const BASE_RADIUS_KM = 5;
     const baseRadiusRadians = BASE_RADIUS_KM / EARTH_RADIUS_KM;
 
-    // Count existing lights nearby
     const nearbyPositiveCount = await Thought.countDocuments({
         sentiment: 'positive',
         location: { $geoWithin: { $centerSphere: [ [lng, lat], baseRadiusRadians ] } }
     });
 
-    // Calculate Boost: Every 10 lights = +2% Range
     const tier = Math.floor(nearbyPositiveCount / 10);
-    const boostMultiplier = 1 + (tier * 0.02); 
+    const boostMultiplier = 1 + (tier * 0.10); 
     const dynamicRadiusKm = BASE_RADIUS_KM * boostMultiplier;
     const dynamicRadiusRadians = dynamicRadiusKm / EARTH_RADIUS_KM;
 
@@ -287,7 +270,7 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       location: userLocation,
       isHealed: sentimentType === 'positive', 
       lightCount: 0,
-      resonanceCount: 0 // Initialize resonance
+      resonanceCount: 0
     });
 
     let message = "";
@@ -295,10 +278,8 @@ app.post('/thoughts', postLimiter, async (req, res) => {
 
     // --- 5. HEALING LOGIC ---
     if (sentimentType === 'positive') {
-      // CASE A: User placed a BEACON
       await newThought.save();
 
-      // Search for distressed pins using the BOOSTED (Dynamic) Radius 
       const nearbyDistressed = await Thought.find({
         sentiment: 'distressed',
         isHealed: false,
@@ -308,7 +289,6 @@ app.post('/thoughts', postLimiter, async (req, res) => {
       let actuallyHealedSomeone = false;
 
       for (const sadPin of nearbyDistressed) {
-        // Check how many lights are around the sad pin to see if it heals
         const lightsAroundPin = await Thought.countDocuments({
           sentiment: 'positive',
           location: { $geoWithin: { $centerSphere: [ sadPin.location.coordinates, baseRadiusRadians ] } } 
@@ -321,6 +301,9 @@ app.post('/thoughts', postLimiter, async (req, res) => {
           actuallyHealedSomeone = true;
         }
         await sadPin.save();
+        // ✅ CRITICAL FIX: Tell the map this specific pin has changed!
+        // Without this, the "candle bar" won't fill up until you refresh the page.
+        io.emit('thought_updated', sadPin);
       }
 
       if (actuallyHealedSomeone) {
@@ -337,7 +320,6 @@ app.post('/thoughts', postLimiter, async (req, res) => {
 
     } else {
       // CASE B: User placed a HEAVY HEART
-      
       const nearbyLights = await Thought.countDocuments({
         sentiment: 'positive',
         location: { $geoWithin: { $centerSphere: [ [lng, lat], dynamicRadiusRadians ] } }
@@ -355,14 +337,16 @@ app.post('/thoughts', postLimiter, async (req, res) => {
 
       await newThought.save();
     }
-     // Notify map to refresh pins
+    
+    // Notify map to refresh pins
+    // ✅ CRITICAL FIX: Ensure 'newThought' is broadcasted
     io.emit('beacons_update');
+    io.emit('thought_created', newThought);
 
     // --- NEW: GLOBAL PULSE BROADCAST ---
     const region = getRegionName(lat, lng);
     const action = sentimentType === 'positive' ? "lit a beacon" : "sent a signal";
     
-    // Broadcast the specific message to all connected clients
     io.emit('pulse_event', {
       message: `Someone in ${region} just ${action}.`,
       sentiment: sentimentType
@@ -375,6 +359,8 @@ app.post('/thoughts', postLimiter, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// ✅ FINAL FIX: Start the server that has Socket.io attached
+// (We removed the duplicate app.listen that was here previously)
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

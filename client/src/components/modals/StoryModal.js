@@ -2,9 +2,10 @@ import React from 'react';
 import { FaGhost, FaLightbulb, FaHeartbeat } from 'react-icons/fa';
 import { GiStarsStack, GiShatteredHeart } from 'react-icons/gi';
 import { IoEarthSharp } from 'react-icons/io5';
-import './App.css'; // Ensure CSS is imported
+import '../../App.css'; // Go up two levels to find App.css
 
-const StoryModal = ({ onClose }) => {
+const StoryModal = ({ onClose, isOpen}) => {
+  if (!isOpen) return null;
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content story-modal-width" onClick={(e) => e.stopPropagation()}>

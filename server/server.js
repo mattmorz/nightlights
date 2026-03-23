@@ -79,7 +79,7 @@ const getRegionName = (lat, lng) => {
 
 // --- CONFIGURATION ---
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 8080;
 
 // 1. Create the HTTP Server
 const server = http.createServer(app);
@@ -120,7 +120,7 @@ app.use(express.json());
 app.set('trust proxy', 1); 
 
 // --- DATABASE CONNECTION ---
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://<user>:<pass>@cluster.mongodb.net/nightlights?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://eomorales_db_user:jattat-sabcik-2hyqpI@cluster0.zccb56e.mongodb.net/?appName=Cluster0';
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB Atlas'))

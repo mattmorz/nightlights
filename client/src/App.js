@@ -97,9 +97,15 @@ function App() {
     };
     fetchData();
 
-    socket.on('thought_created', (newT) => {
+  socket.on('thought_created', (newT) => {
       const p = formatPin(newT);
-      if (p) setPins(prev => [p, ...prev]);
+      if (p) {
+        setPins(prev => {
+          // Check if we already added this pin locally to prevent duplicates
+          if (prev.some(existingPin => existingPin.id === p.id)) return prev;
+          return [p, ...prev];
+        });
+      }
     });
 
     socket.on('thought_updated', (updatedT) => {

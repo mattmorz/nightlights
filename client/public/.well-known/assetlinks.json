@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vercel.nightlights_eight.twa",
+    "sha256_cert_fingerprints": [
+      "21:65:F1:27:E5:8F:69:1A:CD:12:9B:AD:BD:49:73:6B:E6:31:63:95:41:07:E7:C0:61:03:28:EA:FC:B0:48:D1"
+    ]
+  }
+}]
